@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
@@ -77,7 +77,7 @@ jobs:
       ami_id: ${{ steps.extract-output.outputs.ami_id }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
@@ -137,7 +137,7 @@ jobs:
       image_name: ${{ steps.extract-output.outputs.image_name }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
@@ -200,7 +200,7 @@ jobs:
       image_id: ${{ steps.extract-output.outputs.image_id }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
