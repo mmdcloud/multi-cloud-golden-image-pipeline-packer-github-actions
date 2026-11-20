@@ -1,0 +1,50 @@
+---
+# ==============================================================================
+# CIS Hardening: Filesystem, Core Dumps, and Permissions
+# ==============================================================================
+
+- name: Disable core dumps in security limits (CIS 1.5.1)
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/10-disable-core-dumps.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Disable core dumps for all users to prevent secret leakage
+      * hard core 0
+      * soft core 0
+
+- name: Configure system default umask to 027 (CIS 5.4.4)
+  ansible.builtin.replace:
+    path: /etc/login.defs
+    regexp: '^UMASK\s+[0-9]+'
+    replace: 'UMASK           027'
+
+- name: Ensure correct permissions on /etc/passwd and /etc/shadow (CIS 6.1)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: '/etc/passwd', group: 'root', mode: '0644' }
+    - { path: '/etc/group', group: 'root', mode: '0644' }
+    - { path: '/etc/shadow', group: 'shadow', mode: '0640' }
+    - { path: '/etc/gshadow', group: 'shadow', mode: '0640' }
+
+- name: Configure Uncomplicated Firewall (UFW) baseline
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+
+- name: Allow outgoing traffic by default
+  community.general.ufw:
+    policy: allow
+    direction: outgoing
+
+- name: Allow SSH through firewall
+  community.general.ufw:
+    rule: allow
+    port: "{{ sshd_port | string }}"
+    proto: tcp

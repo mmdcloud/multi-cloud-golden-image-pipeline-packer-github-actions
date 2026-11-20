@@ -1,0 +1,39 @@
+---
+# ==============================================================================
+# CIS Hardening: PAM Authentication & Password Quality (CIS Section 5.3)
+# ==============================================================================
+
+- name: Configure password quality requirements (pam_pwquality)
+  ansible.builtin.copy:
+    dest: /etc/security/pwquality.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # CIS 5.3.1 Password Creation Requirements
+      minlen = {{ password_min_length }}
+      minclass = {{ password_min_class }}
+      maxrepeat = {{ password_max_repeat }}
+      maxclassrepeat = {{ password_max_class_repeat }}
+      dcredit = -1
+      ucredit = -1
+      lcredit = -1
+      ocredit = -1
+      gecoscheck = 1
+      dictcheck = 1
+
+- name: Configure account lockout policy for failed login attempts (pam_faillock)
+  ansible.builtin.copy:
+    dest: /etc/security/faillock.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # CIS 5.3.2 Lockout policy
+      audit
+      silent
+      deny = {{ faillock_deny }}
+      fail_interval = 900
+      unlock_time = {{ faillock_unlock_time }}
+      even_deny_root
+      root_unlock_time = 900

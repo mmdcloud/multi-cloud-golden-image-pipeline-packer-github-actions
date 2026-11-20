@@ -1,0 +1,98 @@
+# ==============================================================================
+# Goss Test Suite: Security Hardening & CIS Compliance Verification
+# ==============================================================================
+
+# Kernel sysctl parameters verification
+kernel-param:
+  kernel.randomize_va_space:
+    value: "2"
+  net.ipv4.ip_forward:
+    value: "0"
+  net.ipv4.conf.all.accept_redirects:
+    value: "0"
+  net.ipv4.conf.default.accept_redirects:
+    value: "0"
+  net.ipv4.conf.all.send_redirects:
+    value: "0"
+  net.ipv4.conf.default.send_redirects:
+    value: "0"
+  net.ipv4.conf.all.accept_source_route:
+    value: "0"
+  net.ipv4.conf.default.accept_source_route:
+    value: "0"
+  net.ipv4.conf.all.log_martians:
+    value: "1"
+  net.ipv4.conf.default.log_martians:
+    value: "1"
+  net.ipv4.tcp_syncookies:
+    value: "1"
+  fs.suid_dumpable:
+    value: "0"
+
+# Critical security services verification
+service:
+  auditd:
+    enabled: true
+    running: true
+  ufw:
+    enabled: true
+  cron:
+    enabled: true
+    running: true
+  systemd-timesyncd:
+    enabled: true
+    running: true
+
+# Verification that insecure legacy services are NOT installed or running
+package:
+  auditd:
+    installed: true
+  unattended-upgrades:
+    installed: true
+  ufw:
+    installed: true
+  telnet:
+    installed: false
+  rsh-client:
+    installed: false
+  talk:
+    installed: false
+  nis:
+    installed: false
+
+# SSH Server Configuration verification (sshd_config)
+file:
+  /etc/ssh/sshd_config:
+    exists: true
+    mode: "0600"
+    owner: root
+    group: root
+    contains:
+      - "Protocol 2"
+      - "PermitRootLogin no"
+      - "PasswordAuthentication no"
+      - "PermitEmptyPasswords no"
+      - "X11Forwarding no"
+      - "MaxAuthTries 3"
+      - "ClientAliveInterval 300"
+      - "ClientAliveCountMax 2"
+      - "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com"
+
+  /etc/security/limits.d/10-disable-core-dumps.conf:
+    exists: true
+    contains:
+      - "* hard core 0"
+
+  /etc/sysctl.d/99-cis-hardening.conf:
+    exists: true
+    mode: "0644"
+    owner: root
+
+# Password policy and PAM verification
+command:
+  check_umask:
+    exec: "grep -E '^UMASK[[:space:]]+027' /etc/login.defs"
+    exit-status: 0
+  check_audit_rules:
+    exec: "auditctl -s | grep 'enabled 1\\|enabled 2'"
+    exit-status: 0

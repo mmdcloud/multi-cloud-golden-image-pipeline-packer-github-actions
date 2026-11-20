@@ -1,0 +1,21 @@
+# HashiCorp Packer generated files
+.packer.d/
+crash.log
+manifest-*.json
+
+# Ansible
+*.retry
+.ansible/
+
+# Temporary and log files
+*.log
+*.tmp
+*.sarif
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

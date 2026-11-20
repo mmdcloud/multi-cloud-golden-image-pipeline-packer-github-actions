@@ -1,0 +1,276 @@
+name: "Packer Build - Multi-Cloud Golden Image Release"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packer/**'
+      - 'ansible/**'
+      - 'scripts/**'
+      - 'tests/**'
+  workflow_dispatch:
+    inputs:
+      target_cloud:
+        description: "Target cloud platform to build"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - aws
+          - gcp
+          - azure
+      environment:
+        description: "Target environment"
+        required: true
+        default: "prod"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      image_version:
+        description: "Semantic Version (e.g., 1.2.0)"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  id-token: write   # Mandatory for OIDC Keyless Cloud Authentication
+  contents: read
+  pull-requests: read
+  actions: read
+
+env:
+  PACKER_VERSION: "1.10.3"
+  DEFAULT_VERSION: ${{ github.event.inputs.image_version || '1.0.0' }}
+  TARGET_ENV: ${{ github.event.inputs.environment || 'prod' }}
+
+jobs:
+  pre-flight:
+    name: "Pre-Flight Validation"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Initialize & Validate Configurations
+        run: |
+          packer init packer/versions.pkr.hcl
+          packer validate -var-file="packer/vars/common.pkrvars.hcl" -var-file="packer/vars/aws.pkrvars.hcl" -only="amazon-ebs.builder" packer/
+          packer validate -var-file="packer/vars/common.pkrvars.hcl" -var-file="packer/vars/gcp.pkrvars.hcl" -only="googlecompute.builder" packer/
+          packer validate -var-file="packer/vars/common.pkrvars.hcl" -var-file="packer/vars/azure.pkrvars.hcl" -only="azure-arm.builder" packer/
+
+  # ============================================================================
+  # AWS Golden Image Build (OIDC Authenticated)
+  # ============================================================================
+  build-aws:
+    name: "Build AWS Golden AMI"
+    needs: pre-flight
+    if: github.event_name == 'push' || github.event.inputs.target_cloud == 'all' || github.event.inputs.target_cloud == 'aws'
+    runs-on: ubuntu-latest
+    outputs:
+      ami_id: ${{ steps.extract-output.outputs.ami_id }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Configure AWS Credentials using OIDC (Zero static credentials)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: "sts.amazonaws.com"
+          role-session-name: "packer-golden-image-${{ github.run_id }}"
+
+      - name: Initialize Packer Plugins
+        run: packer init packer/versions.pkr.hcl
+
+      - name: Build Hardened AWS AMI
+        run: |
+          packer build \
+            -var-file="packer/vars/common.pkrvars.hcl" \
+            -var-file="packer/vars/aws.pkrvars.hcl" \
+            -var="environment=${{ env.TARGET_ENV }}" \
+            -var="image_version=${{ env.DEFAULT_VERSION }}" \
+            -var="build_id=${{ github.run_id }}" \
+            -var="git_commit_sha=${{ github.sha }}" \
+            -only="amazon-ebs.builder" \
+            packer/
+
+      - name: Extract AWS Output & AMI ID
+        id: extract-output
+        run: |
+          if [[ -f manifest-amazon-ebs.json ]]; then
+            AMI_ID=$(jq -r '.builds[-1].artifact_id' manifest-amazon-ebs.json | cut -d':' -f2)
+            echo "ami_id=${AMI_ID}" >> $GITHUB_OUTPUT
+            echo "Created AWS AMI: ${AMI_ID}"
+          else
+            echo "ami_id=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload AWS Build Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-aws
+          path: manifest-amazon-ebs.json
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # GCP Golden Image Build (Workload Identity Federation Authenticated)
+  # ============================================================================
+  build-gcp:
+    name: "Build GCP Golden Compute Image"
+    needs: pre-flight
+    if: github.event_name == 'push' || github.event.inputs.target_cloud == 'all' || github.event.inputs.target_cloud == 'gcp'
+    runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.extract-output.outputs.image_name }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Authenticate to Google Cloud via Workload Identity Federation (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: "access_token"
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Initialize Packer Plugins
+        run: packer init packer/versions.pkr.hcl
+
+      - name: Build Hardened GCP Compute Image
+        run: |
+          packer build \
+            -var-file="packer/vars/common.pkrvars.hcl" \
+            -var-file="packer/vars/gcp.pkrvars.hcl" \
+            -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="environment=${{ env.TARGET_ENV }}" \
+            -var="image_version=${{ env.DEFAULT_VERSION }}" \
+            -var="build_id=${{ github.run_id }}" \
+            -var="git_commit_sha=${{ github.sha }}" \
+            -only="googlecompute.builder" \
+            packer/
+
+      - name: Extract GCP Image Name
+        id: extract-output
+        run: |
+          if [[ -f manifest-googlecompute.json ]]; then
+            IMG_NAME=$(jq -r '.builds[-1].artifact_id' manifest-googlecompute.json)
+            echo "image_name=${IMG_NAME}" >> $GITHUB_OUTPUT
+            echo "Created GCP Image: ${IMG_NAME}"
+          else
+            echo "image_name=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload GCP Build Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-gcp
+          path: manifest-googlecompute.json
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # Azure Golden Image Build (OIDC Federated Credentials Authenticated)
+  # ============================================================================
+  build-azure:
+    name: "Build Azure Golden Managed Image"
+    needs: pre-flight
+    if: github.event_name == 'push' || github.event.inputs.target_cloud == 'all' || github.event.inputs.target_cloud == 'azure'
+    runs-on: ubuntu-latest
+    outputs:
+      image_id: ${{ steps.extract-output.outputs.image_id }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Log in to Azure with OIDC Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Initialize Packer Plugins
+        run: packer init packer/versions.pkr.hcl
+
+      - name: Build Hardened Azure Managed Image
+        run: |
+          packer build \
+            -var-file="packer/vars/common.pkrvars.hcl" \
+            -var-file="packer/vars/azure.pkrvars.hcl" \
+            -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var="environment=${{ env.TARGET_ENV }}" \
+            -var="image_version=${{ env.DEFAULT_VERSION }}" \
+            -var="build_id=${{ github.run_id }}" \
+            -var="git_commit_sha=${{ github.sha }}" \
+            -only="azure-arm.builder" \
+            packer/
+
+      - name: Extract Azure Image ID
+        id: extract-output
+        run: |
+          if [[ -f manifest-azure-arm.json ]]; then
+            AZ_IMG=$(jq -r '.builds[-1].artifact_id' manifest-azure-arm.json)
+            echo "image_id=${AZ_IMG}" >> $GITHUB_OUTPUT
+            echo "Created Azure Image: ${AZ_IMG}"
+          else
+            echo "image_id=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Azure Build Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-azure
+          path: manifest-azure-arm.json
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # Summary & Golden Image Catalog Aggregation
+  # ============================================================================
+  publish-summary:
+    name: "Publish Golden Image Release Summary"
+    needs: [build-aws, build-gcp, build-azure]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub Actions Step Summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # 🛡️ Multi-Cloud Golden Image Release Summary
+
+          | Cloud Provider | Target Status | Image Artifact ID |
+          |---|---|---|
+          | **AWS** | ${{ needs.build-aws.result }} | `${{ needs.build-aws.outputs.ami_id || 'N/A' }}` |
+          | **GCP** | ${{ needs.build-gcp.result }} | `${{ needs.build-gcp.outputs.image_name || 'N/A' }}` |
+          | **Azure** | ${{ needs.build-azure.result }} | `${{ needs.build-azure.outputs.image_id || 'N/A' }}` |
+
+          ### Metadata
+          - **Version**: `${{ env.DEFAULT_VERSION }}`
+          - **Environment**: `${{ env.TARGET_ENV }}`
+          - **Commit**: `${{ github.sha }}`
+          - **Triggered By**: `${{ github.actor }}`
+          EOF

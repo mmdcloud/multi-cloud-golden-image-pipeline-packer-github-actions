@@ -1,0 +1,24 @@
+---
+# ==============================================================================
+# CIS Benchmark Hardening Master Orchestrator
+# ==============================================================================
+
+- name: Apply Kernel & Network Sysctl Hardening (CIS Section 3)
+  ansible.builtin.import_tasks: sysctl.yml
+  tags: ['cis', 'sysctl']
+
+- name: Apply SSH Server Daemon Hardening (CIS Section 5.2)
+  ansible.builtin.import_tasks: sshd.yml
+  tags: ['cis', 'sshd']
+
+- name: Configure System Audit Daemon & Inflexible Rules (CIS Section 4.1)
+  ansible.builtin.import_tasks: auditd.yml
+  tags: ['cis', 'auditd']
+
+- name: Apply Filesystem & Core Dump Protections (CIS Section 1)
+  ansible.builtin.import_tasks: filesystem.yml
+  tags: ['cis', 'filesystem']
+
+- name: Apply PAM Authentication & Password Quality Policies (CIS Section 5.3)
+  ansible.builtin.import_tasks: pam.yml
+  tags: ['cis', 'pam']

@@ -1,0 +1,61 @@
+---
+# ==============================================================================
+# Ansible Global Configuration Variables
+# ==============================================================================
+
+# Timezone and Locale
+system_timezone: "UTC"
+system_locale: "en_US.UTF-8"
+
+# CIS Benchmark Hardening Flags
+cis_hardening_enabled: true
+compliance_level: "CIS-Level-1"
+
+# SSH Hardening Parameters
+sshd_port: 22
+sshd_permit_root_login: "no"
+sshd_password_authentication: "no"
+sshd_permit_empty_passwords: "no"
+sshd_x11_forwarding: "no"
+sshd_max_auth_tries: 3
+sshd_client_alive_interval: 300
+sshd_client_alive_count_max: 2
+sshd_ciphers: "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com"
+sshd_macs: "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com"
+sshd_kex_algorithms: "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512"
+
+# Password Quality & Aging Policy
+password_min_length: 14
+password_min_class: 4
+password_max_repeat: 3
+password_max_class_repeat: 4
+password_remember: 5
+faillock_deny: 5
+faillock_unlock_time: 900
+
+# Base Packages to Install
+base_packages:
+  - curl
+  - wget
+  - vim
+  - git
+  - ufw
+  - auditd
+  - audispd-plugins
+  - unattended-upgrades
+  - update-notifier-common
+  - chrony
+  - libpam-pwquality
+  - fail2ban
+  - net-tools
+  - iotop
+  - htop
+
+# Legacy / Insecure Packages to Purge (CIS Recommendation)
+legacy_packages_to_remove:
+  - telnet
+  - rsh-client
+  - rsh-redone-client
+  - talk
+  - nis
+  - xinetd

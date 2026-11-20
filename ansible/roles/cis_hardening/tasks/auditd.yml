@@ -1,0 +1,102 @@
+---
+# ==============================================================================
+# CIS Hardening: System Auditing (auditd) Configuration (CIS Section 4.1)
+# Implements comprehensive monitoring for security-relevant system calls & events
+# ==============================================================================
+
+- name: Deploy hardened auditd daemon configuration
+  ansible.builtin.copy:
+    dest: /etc/audit/auditd.conf
+    owner: root
+    group: root
+    mode: '0640'
+    content: |
+      local_events = yes
+      write_logs = yes
+      log_file = /var/log/audit/audit.log
+      log_group = root
+      log_format = ENRICHED
+      flush = INCREMENTAL_ASYNC
+      freq = 50
+      max_log_file = 25
+      num_logs = 10
+      priority_boost = 4
+      name_format = NONE
+      max_log_file_action = ROTATE
+      space_left = 75
+      space_left_action = SYSLOG
+      verify_email = yes
+      action_mail_acct = root
+      admin_space_left = 50
+      admin_space_left_action = SUSPEND
+      disk_full_action = SUSPEND
+      disk_error_action = SUSPEND
+      use_libwrap = yes
+      tcp_listen_queue = 5
+      tcp_max_per_addr = 1
+      tcp_client_max_idle = 0
+      enable_flag = 2
+
+- name: Deploy comprehensive CIS audit rules
+  ansible.builtin.copy:
+    dest: /etc/audit/rules.d/cis.rules
+    owner: root
+    group: root
+    mode: '0640'
+    content: |
+      ## First rule - delete all previous rules
+      -D
+
+      ## Increase the buffers to survive stress events
+      -b 8192
+
+      ## Failure mode: 1 = printk, 2 = panic
+      -f 1
+
+      ## Monitor changes to system time & date (CIS 4.1.3)
+      -a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
+      -a always,exit -F arch=b32 -S adjtimex,settimeofday,clock_settime -k time-change
+      -w /etc/localtime -p wa -k time-change
+
+      ## Monitor user/group modifications (CIS 4.1.4)
+      -w /etc/group -p wa -k identity
+      -w /etc/passwd -p wa -k identity
+      -w /etc/gshadow -p wa -k identity
+      -w /etc/shadow -p wa -k identity
+      -w /etc/security/opasswd -p wa -k identity
+
+      ## Monitor network environment alterations (CIS 4.1.5)
+      -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
+      -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
+      -w /etc/issue -p wa -k system-locale
+      -w /etc/issue.net -p wa -k system-locale
+      -w /etc/hosts -p wa -k system-locale
+      -w /etc/network -p wa -k system-locale
+
+      ## Monitor discretionary access control permission modifications (CIS 4.1.8 - 4.1.11)
+      -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=4294967295 -k perm_mod
+      -a always,exit -F arch=b64 -S chown,fchown,lchown,fchownat -F auid>=1000 -F auid!=4294967295 -k perm_mod
+      -a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=4294967295 -k perm_mod
+
+      ## Monitor unsuccessful unauthorized file access attempts (CIS 4.1.12)
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=4294967295 -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=4294967295 -k access
+
+      ## Monitor privileged commands execution (CIS 4.1.13)
+      -a always,exit -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged-sudo
+      -a always,exit -F path=/usr/bin/su -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged-su
+
+      ## Monitor kernel module loading and unloading (CIS 4.1.16)
+      -w /sbin/insmod -p x -k modules
+      -w /sbin/rmmod -p x -k modules
+      -w /sbin/modprobe -p x -k modules
+      -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k modules
+
+      ## Make the audit configuration immutable (Must be the last rule) (CIS 4.1.17)
+      -e 2
+
+- name: Enable and restart auditd service
+  ansible.builtin.service:
+    name: auditd
+    state: restarted
+    enabled: true

@@ -1,0 +1,62 @@
+---
+# ==============================================================================
+# Cloud-Specific Agents & Guest Telemetry Integration
+# Dynamically configures the environment based on cloud provider target
+# ==============================================================================
+
+- name: AWS-specific agent installation
+  when: cloud_provider is search("amazon")
+  block:
+    - name: Download AWS Systems Manager (SSM) Agent
+      ansible.builtin.get_url:
+        url: "https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb"
+        dest: "/tmp/amazon-ssm-agent.deb"
+        mode: '0644'
+
+    - name: Install AWS SSM Agent
+      ansible.builtin.apt:
+        deb: "/tmp/amazon-ssm-agent.deb"
+        state: present
+
+    - name: Enable Amazon SSM Agent service
+      ansible.builtin.systemd:
+        name: amazon-ssm-agent
+        enabled: true
+        state: started
+
+    - name: Remove temporary SSM installer
+      ansible.builtin.file:
+        path: "/tmp/amazon-ssm-agent.deb"
+        state: absent
+
+- name: GCP-specific agent installation
+  when: cloud_provider is search("googlecompute")
+  block:
+    - name: Ensure Google Compute Engine guest environment packages are installed
+      ansible.builtin.apt:
+        name:
+          - google-guest-agent
+          - google-osconfig-agent
+        state: present
+
+    - name: Enable Google Guest Agent services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+      loop:
+        - google-guest-agent
+        - google-osconfig-agent
+
+- name: Azure-specific agent installation
+  when: cloud_provider is search("azure")
+  block:
+    - name: Ensure Azure Linux Agent (walinuxagent) is present
+      ansible.builtin.apt:
+        name: walinuxagent
+        state: present
+
+    - name: Configure waagent parameters for optimal security
+      ansible.builtin.lineinfile:
+        path: /etc/waagent.conf
+        regexp: '^Provisioning.DeleteRootPassword='
+        line: 'Provisioning.DeleteRootPassword=y'

@@ -1,0 +1,68 @@
+---
+# ==============================================================================
+# CIS Hardening: SSH Server Security Configuration (CIS Section 5.2)
+# ==============================================================================
+
+- name: Deploy hardened sshd_config
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+    validate: '/usr/sbin/sshd -t -f %s'
+    content: |
+      # CIS Benchmark Hardened OpenSSH Daemon Configuration
+      Protocol 2
+      Port {{ sshd_port }}
+      AddressFamily any
+      ListenAddress 0.0.0.0
+      ListenAddress ::
+
+      # Host Key algorithms
+      HostKey /etc/ssh/ssh_host_ed25519_key
+      HostKey /etc/ssh/ssh_host_rsa_key
+
+      # Cryptographic Ciphers & MACs (Modern, robust algorithm suites)
+      Ciphers {{ sshd_ciphers }}
+      MACs {{ sshd_macs }}
+      KexAlgorithms {{ sshd_kex_algorithms }}
+
+      # Authentication Policy
+      LoginGraceTime 60
+      PermitRootLogin {{ sshd_permit_root_login }}
+      StrictModes yes
+      MaxAuthTries {{ sshd_max_auth_tries }}
+      MaxSessions 4
+      MaxStartups 10:30:60
+
+      PubkeyAuthentication yes
+      PasswordAuthentication {{ sshd_password_authentication }}
+      PermitEmptyPasswords {{ sshd_permit_empty_passwords }}
+      HostbasedAuthentication no
+      IgnoreRhosts yes
+
+      # Environment & Forwarding
+      X11Forwarding {{ sshd_x11_forwarding }}
+      AllowTcpForwarding no
+      AllowAgentForwarding no
+      DisableForwarding yes
+      PermitUserEnvironment no
+
+      # Session Management & Timeouts
+      ClientAliveInterval {{ sshd_client_alive_interval }}
+      ClientAliveCountMax {{ sshd_client_alive_count_max }}
+      UsePAM yes
+      TCPKeepAlive no
+
+      # Logging
+      LogLevel VERBOSE
+      SyslogFacility AUTH
+
+      # Subsystems
+      Subsystem sftp /usr/lib/openssh/sftp-server -f AUTHPRIV -l INFO
+
+- name: Ensure SSH service is enabled and started
+  ansible.builtin.systemd:
+    name: ssh
+    enabled: true
+    state: started

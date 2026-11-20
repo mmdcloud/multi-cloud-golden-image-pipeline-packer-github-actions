@@ -1,0 +1,21 @@
+---
+# ==============================================================================
+# Golden Image Orchestration Playbook
+# Configures Base System, CIS Benchmark Hardening, and Cloud Agents
+# ==============================================================================
+- name: Multi-Cloud Production Golden Image Hardening & Configuration
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: base
+      tags: ['base', 'packages', 'patching']
+
+    - role: cis_hardening
+      when: cis_hardening_enabled | default(true) | bool
+      tags: ['hardening', 'cis', 'security']
+
+    - role: cloud_agents
+      tags: ['agents', 'cloud']
