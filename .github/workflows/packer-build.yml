@@ -85,7 +85,7 @@ jobs:
           version: ${{ env.PACKER_VERSION }}
 
       - name: Configure AWS Credentials using OIDC (Zero static credentials)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
